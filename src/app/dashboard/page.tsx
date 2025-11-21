@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { supabase, isSupabaseConfigured } from "@/lib/supabase"
 import { 
   Heart, Baby, Moon, Bell, Camera, TrendingUp, 
   Calendar, BookOpen, Users, Menu, X, Check,
   Clock, Utensils, Activity, Shield, Sparkles, ChevronRight,
-  LogOut, Plus, Edit, Scan
+  LogOut, Plus, Edit, Scan, AlertCircle
 } from "lucide-react"
 
 type Baby = {
@@ -56,6 +56,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("dashboard")
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   
   const [baby, setBaby] = useState<Baby | null>(null)
   const [sleepRecords, setSleepRecords] = useState<SleepRecord[]>([])
@@ -86,86 +87,159 @@ export default function Dashboard() {
   }, [user, baby])
 
   const checkUser = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      router.push("/auth")
-      return
+    try {
+      if (!isSupabaseConfigured()) {
+        setError("Supabase não configurado. Configure as variáveis de ambiente.")
+        setLoading(false)
+        return
+      }
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError) {
+        console.error("Erro ao buscar usuário:", userError)
+        setError("Erro ao verificar autenticação")
+        router.push("/auth")
+        return
+      }
+
+      if (!user) {
+        router.push("/auth")
+        return
+      }
+
+      setUser(user)
+      await loadBaby(user.id)
+      setLoading(false)
+    } catch (err) {
+      console.error("Erro ao verificar usuário:", err)
+      setError("Erro ao carregar dados")
+      setLoading(false)
     }
-    setUser(user)
-    await loadBaby(user.id)
-    setLoading(false)
   }
 
   const loadBaby = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('bebes')
-      .select('*')
-      .eq('user_id', userId)
-      .single()
+    try {
+      const { data, error } = await supabase
+        .from('bebes')
+        .select('*')
+        .eq('user_id', userId)
+        .single()
 
-    if (data) {
-      setBaby(data)
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // Nenhum bebê encontrado - isso é normal
+          console.log("Nenhum bebê cadastrado ainda")
+          return
+        }
+        console.error("Erro ao carregar bebê:", error)
+        setError("Erro ao carregar dados do bebê")
+        return
+      }
+
+      if (data) {
+        setBaby(data)
+      }
+    } catch (err) {
+      console.error("Erro ao carregar bebê:", err)
+      setError("Erro ao carregar dados")
     }
   }
 
   const loadData = async () => {
     if (!baby) return
 
-    // Load sleep records
-    const { data: sleepData } = await supabase
-      .from('sono')
-      .select('*')
-      .eq('bebe_id', baby.id)
-      .order('data', { ascending: false })
-      .limit(10)
-    if (sleepData) setSleepRecords(sleepData)
+    try {
+      // Load sleep records
+      const { data: sleepData, error: sleepError } = await supabase
+        .from('sono')
+        .select('*')
+        .eq('bebe_id', baby.id)
+        .order('data', { ascending: false })
+        .limit(10)
+      
+      if (sleepError) {
+        console.error("Erro ao carregar sono:", sleepError)
+      } else if (sleepData) {
+        setSleepRecords(sleepData)
+      }
 
-    // Load feeding records
-    const { data: feedingData } = await supabase
-      .from('refeicoes')
-      .select('*')
-      .eq('bebe_id', baby.id)
-      .order('data', { ascending: false })
-      .limit(10)
-    if (feedingData) setFeedingRecords(feedingData)
+      // Load feeding records
+      const { data: feedingData, error: feedingError } = await supabase
+        .from('refeicoes')
+        .select('*')
+        .eq('bebe_id', baby.id)
+        .order('data', { ascending: false })
+        .limit(10)
+      
+      if (feedingError) {
+        console.error("Erro ao carregar refeições:", feedingError)
+      } else if (feedingData) {
+        setFeedingRecords(feedingData)
+      }
 
-    // Load growth records
-    const { data: growthData } = await supabase
-      .from('crescimento')
-      .select('*')
-      .eq('bebe_id', baby.id)
-      .order('data', { ascending: false })
-      .limit(5)
-    if (growthData) setGrowthRecords(growthData)
+      // Load growth records
+      const { data: growthData, error: growthError } = await supabase
+        .from('crescimento')
+        .select('*')
+        .eq('bebe_id', baby.id)
+        .order('data', { ascending: false })
+        .limit(5)
+      
+      if (growthError) {
+        console.error("Erro ao carregar crescimento:", growthError)
+      } else if (growthData) {
+        setGrowthRecords(growthData)
+      }
 
-    // Load diary entries
-    const { data: diaryData } = await supabase
-      .from('diario')
-      .select('*')
-      .eq('bebe_id', baby.id)
-      .order('data', { ascending: false })
-      .limit(10)
-    if (diaryData) setDiaryEntries(diaryData)
+      // Load diary entries
+      const { data: diaryData, error: diaryError } = await supabase
+        .from('diario')
+        .select('*')
+        .eq('bebe_id', baby.id)
+        .order('data', { ascending: false })
+        .limit(10)
+      
+      if (diaryError) {
+        console.error("Erro ao carregar diário:", diaryError)
+      } else if (diaryData) {
+        setDiaryEntries(diaryData)
+      }
+    } catch (err) {
+      console.error("Erro ao carregar dados:", err)
+    }
   }
 
   const handleAddBaby = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user) return
 
-    const { data, error } = await supabase
-      .from('bebes')
-      .insert([{
-        user_id: user.id,
-        nome: babyForm.nome,
-        data_nascimento: babyForm.data_nascimento
-      }])
-      .select()
-      .single()
+    try {
+      const { data, error } = await supabase
+        .from('bebes')
+        .insert([{
+          user_id: user.id,
+          nome: babyForm.nome,
+          data_nascimento: babyForm.data_nascimento
+        }])
+        .select()
+        .single()
 
-    if (data) {
-      setBaby(data)
-      setShowAddBaby(false)
-      setBabyForm({ nome: "", data_nascimento: "" })
+      if (error) {
+        console.error("Erro ao adicionar bebê:", error)
+        setError("Erro ao adicionar bebê")
+        return
+      }
+
+      if (data) {
+        setBaby(data)
+        setShowAddBaby(false)
+        setBabyForm({ nome: "", data_nascimento: "" })
+        setError(null)
+      }
+    } catch (err) {
+      console.error("Erro ao adicionar bebê:", err)
+      setError("Erro ao adicionar bebê")
     }
   }
 
@@ -173,22 +247,32 @@ export default function Dashboard() {
     e.preventDefault()
     if (!baby) return
 
-    const now = new Date()
-    const { error } = await supabase
-      .from('refeicoes')
-      .insert([{
-        bebe_id: baby.id,
-        data: now.toISOString().split('T')[0],
-        hora: now.toTimeString().split(' ')[0],
-        tipo: feedingForm.tipo,
-        quantidade: feedingForm.quantidade,
-        observacoes: feedingForm.observacoes
-      }])
+    try {
+      const now = new Date()
+      const { error } = await supabase
+        .from('refeicoes')
+        .insert([{
+          bebe_id: baby.id,
+          data: now.toISOString().split('T')[0],
+          hora: now.toTimeString().split(' ')[0],
+          tipo: feedingForm.tipo,
+          quantidade: feedingForm.quantidade,
+          observacoes: feedingForm.observacoes
+        }])
 
-    if (!error) {
+      if (error) {
+        console.error("Erro ao adicionar refeição:", error)
+        setError("Erro ao adicionar refeição")
+        return
+      }
+
       setShowAddFeeding(false)
       setFeedingForm({ tipo: "breast", quantidade: "", observacoes: "" })
+      setError(null)
       loadData()
+    } catch (err) {
+      console.error("Erro ao adicionar refeição:", err)
+      setError("Erro ao adicionar refeição")
     }
   }
 
@@ -196,21 +280,31 @@ export default function Dashboard() {
     e.preventDefault()
     if (!baby) return
 
-    const today = new Date().toISOString().split('T')[0]
-    const { error } = await supabase
-      .from('sono')
-      .insert([{
-        bebe_id: baby.id,
-        data: today,
-        hora_inicio: sleepForm.hora_inicio,
-        hora_fim: sleepForm.hora_fim,
-        qualidade: sleepForm.qualidade
-      }])
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const { error } = await supabase
+        .from('sono')
+        .insert([{
+          bebe_id: baby.id,
+          data: today,
+          hora_inicio: sleepForm.hora_inicio,
+          hora_fim: sleepForm.hora_fim,
+          qualidade: sleepForm.qualidade
+        }])
 
-    if (!error) {
+      if (error) {
+        console.error("Erro ao adicionar sono:", error)
+        setError("Erro ao adicionar sono")
+        return
+      }
+
       setShowAddSleep(false)
       setSleepForm({ hora_inicio: "", hora_fim: "", qualidade: "boa" })
+      setError(null)
       loadData()
+    } catch (err) {
+      console.error("Erro ao adicionar sono:", err)
+      setError("Erro ao adicionar sono")
     }
   }
 
@@ -218,21 +312,31 @@ export default function Dashboard() {
     e.preventDefault()
     if (!baby) return
 
-    const today = new Date().toISOString().split('T')[0]
-    const { error } = await supabase
-      .from('diario')
-      .insert([{
-        bebe_id: baby.id,
-        data: today,
-        titulo: diaryForm.titulo,
-        conteudo: diaryForm.conteudo,
-        tipo: diaryForm.tipo
-      }])
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const { error } = await supabase
+        .from('diario')
+        .insert([{
+          bebe_id: baby.id,
+          data: today,
+          titulo: diaryForm.titulo,
+          conteudo: diaryForm.conteudo,
+          tipo: diaryForm.tipo
+        }])
 
-    if (!error) {
+      if (error) {
+        console.error("Erro ao adicionar diário:", error)
+        setError("Erro ao adicionar diário")
+        return
+      }
+
       setShowAddDiary(false)
       setDiaryForm({ titulo: "", conteudo: "", tipo: "momento" })
+      setError(null)
       loadData()
+    } catch (err) {
+      console.error("Erro ao adicionar diário:", err)
+      setError("Erro ao adicionar diário")
     }
   }
 
@@ -269,6 +373,26 @@ export default function Dashboard() {
             <Baby className="w-12 h-12 text-white" />
           </div>
           <p className="text-gray-600">Carregando...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-white via-pink-50/30 to-blue-50/30 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-xl border border-red-100">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+            <h2 className="text-xl font-bold text-gray-800">Erro</h2>
+          </div>
+          <p className="text-gray-600 mb-6">{error}</p>
+          <button
+            onClick={() => router.push("/auth")}
+            className="w-full py-3 bg-gradient-to-r from-[#FF7F7F] to-[#A3C4E0] text-white rounded-xl font-medium"
+          >
+            Voltar para Login
+          </button>
         </div>
       </div>
     )

@@ -1,13 +1,41 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Configuração com valores padrão para evitar erros
+// Configuração do Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-// Cria cliente apenas se as credenciais estiverem disponíveis
-export const supabase = supabaseUrl && supabaseAnonKey 
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null
+// Validação das credenciais
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('⚠️ Credenciais do Supabase não configuradas. Configure as variáveis de ambiente.')
+}
+
+// Cria cliente Supabase com configurações otimizadas
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+  },
+  global: {
+    headers: {
+      'x-application-name': 'mamybaby',
+    },
+  },
+  db: {
+    schema: 'public',
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
+})
+
+// Helper para verificar se o Supabase está configurado
+export const isSupabaseConfigured = () => {
+  return Boolean(supabaseUrl && supabaseAnonKey)
+}
 
 // Tipos atualizados para corresponder ao banco de dados real
 export type Database = {
